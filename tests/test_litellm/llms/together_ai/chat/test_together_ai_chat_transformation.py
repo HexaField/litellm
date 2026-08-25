@@ -249,12 +249,28 @@ def test_reasoning_effort_none_does_not_clobber_user_reasoning():
 
 @pytest.mark.parametrize(
     "effort, expected",
-    [("minimal", "high"), ("low", "high"), ("medium", "high"), ("high", "max"), ("xhigh", "max"), ("max", "max")],
+    [("minimal", "high"), ("low", "high"), ("medium", "high"), ("high", "high"), ("xhigh", "max"), ("max", "max")],
 )
 def test_deepseek_v4_pro_remaps_to_high_max(effort, expected):
     mapped = _map_reasoning_effort(HIGH_MAX_REASONING_MODEL, effort)
 
     assert mapped["reasoning_effort"] == expected
+
+
+@pytest.mark.parametrize(
+    "model, effort, expected",
+    [
+        (ADJUSTABLE_REASONING_MODEL, {"effort": "max", "summary": "detailed"}, "high"),
+        (HYBRID_REASONING_MODEL, {"effort": "medium", "summary": "auto"}, "medium"),
+        (HIGH_MAX_REASONING_MODEL, {"effort": "high", "summary": "auto"}, "high"),
+        (HIGH_MAX_REASONING_MODEL, {"effort": "max", "summary": "auto"}, "max"),
+    ],
+)
+def test_reasoning_effort_dict_form_is_translated(model, effort, expected):
+    mapped = _map_reasoning_effort(model, effort)
+
+    assert mapped["reasoning_effort"] == expected
+    assert "reasoning" not in mapped
 
 
 def test_deepseek_v4_pro_dated_variant_remaps_via_prefix():

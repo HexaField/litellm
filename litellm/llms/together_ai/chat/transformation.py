@@ -41,7 +41,7 @@ HYBRID_REASONING_MODELS: Final = frozenset(
 HIGH_MAX_EFFORT_MODEL_PREFIX: Final = "deepseek-ai/DeepSeek-V4-Pro"
 EFFORT_TRANSLATION: Final = MappingProxyType({"minimal": "low", "xhigh": "high", "max": "high"})
 HIGH_MAX_EFFORT_TRANSLATION: Final = MappingProxyType(
-    {"minimal": "high", "low": "high", "medium": "high", "high": "max", "xhigh": "max"}
+    {"minimal": "high", "low": "high", "medium": "high", "xhigh": "max"}
 )
 
 
@@ -147,8 +147,15 @@ class TogetherAIChatConfig(OpenAIGPTConfig):
             mapped_openai_params.pop(param)
         if mapped_openai_params.get("response_format") == PLAIN_TEXT_RESPONSE_FORMAT:
             mapped_openai_params.pop("response_format")
-        effort: Final = mapped_openai_params.get("reasoning_effort")
-        if not isinstance(effort, str):
+        raw_effort: Final = mapped_openai_params.get("reasoning_effort")
+        effort: Final = (
+            raw_effort
+            if isinstance(raw_effort, str)
+            else raw_effort["effort"]
+            if isinstance(raw_effort, dict) and isinstance(raw_effort.get("effort"), str)
+            else None
+        )
+        if effort is None:
             return mapped_openai_params
         mapped_openai_params.pop("reasoning_effort")
         for key, value in _reasoning_effort_payload(effort, model).items():
