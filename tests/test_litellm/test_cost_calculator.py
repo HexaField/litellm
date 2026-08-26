@@ -3838,3 +3838,19 @@ def test_completion_cost_together_unmapped_model_still_uses_size_bucket(_local_m
     )
 
     assert cost == pytest.approx((23 + 15) * 9e-07, rel=1e-9)
+
+
+def test_completion_cost_together_metadata_only_registry_row_falls_back_to_size_bucket(_local_model_cost_map):
+    """Regression: Together registry rows that only carry capability metadata (no
+    input_cost_per_token/output_cost_per_token/tiered_pricing) must not short-circuit the
+    size-bucket rewrite. Otherwise models like togethercomputer/CodeLlama-34b-Instruct
+    resolve to $0 spend instead of the 21.1b-41b bucket rate."""
+
+    cost = completion_cost(
+        completion_response=_together_chat_response(
+            model="togethercomputer/CodeLlama-34b-Instruct", prompt_tokens=23, completion_tokens=15, cached_tokens=0
+        ),
+        custom_llm_provider="together_ai",
+    )
+
+    assert cost == pytest.approx((23 + 15) * 8e-07, rel=1e-9)
