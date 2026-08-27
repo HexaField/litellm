@@ -24,6 +24,7 @@ from litellm._logging import verbose_proxy_logger
 from litellm.llms.anthropic.chat.transformation import AnthropicConfig
 from litellm.llms.anthropic.experimental_pass_through.adapters.transformation import (
     LiteLLMAnthropicMessagesAdapter,
+    _is_provider_native_tool_dict,
 )
 from litellm.llms.base_llm.guardrail_translation.base_translation import BaseTranslation
 from litellm.llms.base_llm.guardrail_translation.utils import (
@@ -404,14 +405,20 @@ class AnthropicMessagesHandler(BaseTranslation):
             guardrailed_texts: Final = guardrailed_inputs.get("texts", [])
             guardrailed_tools: Final = guardrailed_inputs.get("tools")
             if guardrailed_tools is not None:
-                # Convert tools back from OpenAI format to Anthropic format
+                # Convert tools back from OpenAI format to Anthropic format.
+                # Provider-native tool dicts (e.g. ``{"googleMaps": {}}``) are
+                # forwarded through the adapter verbatim, so they have no
+                # ``type`` field and would crash ``_map_tool_helper``; pass them
+                # back untouched instead.
                 anthropic_config: Final = AnthropicConfig()
                 anthropic_tools: Final[list[AllAnthropicToolsValues]] = []
                 for tool in guardrailed_tools:
+                    if isinstance(tool, dict) and _is_provider_native_tool_dict(tool):
+                        anthropic_tools.append(cast(AllAnthropicToolsValues, tool))
+                        continue
                     converted_tool, mcp_server = anthropic_config._map_tool_helper(tool)
                     if converted_tool is not None:
                         anthropic_tools.append(converted_tool)
-                    # Note: MCP servers are handled separately in the main transformation
                 data["tools"] = (
                     merge_returned_tools_into_request_tools(
                         request_tools=data.get("tools"),

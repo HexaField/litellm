@@ -211,15 +211,21 @@ def openai_tool_name(tool: object) -> str | None:
 
 def anthropic_tool_name(tool: object) -> str | None:
     """Anthropic tools carry a flat ``name``; an OpenAI-format function tool, which the
-    non-Anthropic bridge forwards verbatim, carries it under ``function.name`` instead."""
+    Anthropic bridge forwards verbatim, carries it under ``function.name`` instead.
+
+    ``function.name`` must win over any top-level ``name`` on an OpenAI-format tool:
+    that nested name is what the model actually invokes, so an allowlist check that
+    read the top-level ``name`` first could be bypassed with a decoy (or empty)
+    top-level ``name`` alongside a disallowed ``function.name``.
+    """
     if not isinstance(tool, dict):
         return None
-    flat_name: Final = tool.get("name")
-    if isinstance(flat_name, str):
-        return flat_name
     function: Final = tool.get("function") if tool.get("type") == "function" else None
-    function_name: Final = function.get("name") if isinstance(function, dict) else None
-    return function_name if isinstance(function_name, str) else None
+    if isinstance(function, dict):
+        function_name: Final = function.get("name")
+        return function_name if isinstance(function_name, str) else None
+    flat_name: Final = tool.get("name")
+    return flat_name if isinstance(flat_name, str) else None
 
 
 def merge_returned_tools_into_request_tools(

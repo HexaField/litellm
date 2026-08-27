@@ -1318,8 +1318,109 @@ class TestAnthropicMessagesHandlerToolInjection:
         assert [t.get("name") for t in result["tools"]] == ["injected_tool"]
 
 
+class TestAnthropicMessagesHandlerToolAllowlistExtraction:
+    """REGRESSION: `extract_request_tool_names` feeds the /v1/messages tool
+    allowlist. For OpenAI-format function tools, which the Anthropic bridge
+    forwards verbatim, the callable identity the model receives is
+    ``function.name``, so extraction must return that, never a decoy or empty
+    top-level ``name`` on the same tool."""
+
+    def test_openai_function_tool_uses_nested_name_for_allowlist(self):
+        handler = AnthropicMessagesHandler()
+
+        data = {
+            "tools": [
+                {
+                    "type": "function",
+                    "name": "innocent_looking",
+                    "function": {
+                        "name": "actual_dangerous_tool",
+                        "parameters": {"type": "object", "properties": {}},
+                    },
+                }
+            ]
+        }
+
+        assert handler.extract_request_tool_names(data) == ["actual_dangerous_tool"]
+
+    def test_openai_function_tool_empty_top_level_name_still_extracts(self):
+        handler = AnthropicMessagesHandler()
+
+        data = {
+            "tools": [
+                {
+                    "type": "function",
+                    "name": "",
+                    "function": {
+                        "name": "actual_dangerous_tool",
+                        "parameters": {"type": "object", "properties": {}},
+                    },
+                }
+            ]
+        }
+
+        assert handler.extract_request_tool_names(data) == ["actual_dangerous_tool"]
+
+    def test_native_anthropic_tool_still_uses_flat_name(self):
+        handler = AnthropicMessagesHandler()
+
+        data = {
+            "tools": [
+                {
+                    "name": "get_weather",
+                    "description": "Get the weather at a specific location",
+                    "input_schema": {"type": "object", "properties": {}},
+                }
+            ]
+        }
+
+        assert handler.extract_request_tool_names(data) == ["get_weather"]
+
+
+class ToolEchoingGuardrail(CustomGuardrail):
+    """Return the OpenAI-format tools the handler passed in unchanged.
+
+    This is the default apply_guardrail contract (echo inputs). It exercises
+    the write-back path where the handler feeds the guardrail's echoed tools
+    through ``_map_tool_helper`` again.
+    """
+
+    async def apply_guardrail(
+        self,
+        inputs: GenericGuardrailAPIInputs,
+        request_data: dict,
+        input_type: Literal["request", "response"],
+        logging_obj: Optional[Any] = None,
+    ) -> GenericGuardrailAPIInputs:
+        return inputs
+
+
+class TestAnthropicMessagesHandlerProviderNativeToolEcho:
+    """REGRESSION: A provider-native tool dict (single non-schema key like
+    ``{"googleMaps": {}}``) is forwarded through the Anthropic bridge verbatim
+    and has no ``type`` field. When a unified guardrail echoes it back, the
+    write-back must not send it through ``_map_tool_helper`` (which indexes
+    ``tool["type"]``) or ``/v1/messages`` would 500 on any such request."""
+
+    @pytest.mark.asyncio
+    async def test_provider_native_tool_survives_guardrail_echo(self):
+        handler = AnthropicMessagesHandler()
+        guardrail = ToolEchoingGuardrail(guardrail_name="test")
+
+        data = {
+            "model": "claude-opus-4-6",
+            "messages": [{"role": "user", "content": "hi"}],
+            "tools": [{"googleMaps": {}}],
+        }
+
+        result = await handler.process_input_messages(
+            data=data, guardrail_to_apply=guardrail, litellm_logging_obj=MagicMock()
+        )
+
+        assert result["tools"] == [{"googleMaps": {}}]
+
+
 if __name__ == "__main__":
-    # Run the tests
     pytest.main([__file__, "-v"])
 
 
