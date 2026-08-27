@@ -73,6 +73,11 @@ ARRAY_KEYS: dict[str, JsonSchema] = {
         "description": "Output modalities the model can produce.",
         "items": {"type": "string", "enum": ["text", "image", "audio", "video", "code"]},
     },
+    "reasoning_effort_levels": {
+        "type": "array",
+        "description": "Exact reasoning_effort levels this deployment accepts, for a model whose set the per-level supports_* flags cannot express.",
+        "items": {"type": "string", "enum": ["none", "minimal", "low", "medium", "high", "xhigh", "max"]},
+    },
     "supported_regions": {
         "type": "array",
         "description": "Cloud regions the model is available in ('global' or region ids).",

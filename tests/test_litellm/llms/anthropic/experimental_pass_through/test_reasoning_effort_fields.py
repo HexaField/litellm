@@ -291,3 +291,41 @@ class TestAdapterAdaptiveThinking:
         )
         assert result is not None
         assert result["effort"] == "medium"
+
+
+class TestDeclaredEffortsAnswerTheDegradationGate:
+    """An entry naming its exact levels answers this gate, so the level the model map advertises on
+    /model_group/info is the level /v1/messages forwards. Without it the chain reads only the
+    per-level booleans, and a kimi-k3 request asking for max silently arrives as high."""
+
+    @pytest.mark.parametrize(
+        "model, provider",
+        [("kimi-k3", "moonshot"), ("kimi-k3", "fireworks_ai"), ("kimi-k3-us", "fireworks_ai")],
+    )
+    def test_a_declared_level_survives_instead_of_degrading(self, local_model_cost_map, model, provider):
+        assert normalize_reasoning_effort_value("max", model, provider) == "max"
+
+    def test_a_level_the_entry_does_not_declare_still_degrades(self, local_model_cost_map):
+        """kimi-k3 declares low, high and max, so xhigh is not on it and keeps falling through the
+        existing chain rather than being waved past by the mere presence of a declaration."""
+        assert normalize_reasoning_effort_value("xhigh", "kimi-k3", "moonshot") == "high"
+        assert normalize_reasoning_effort_value("minimal", "kimi-k3", "moonshot") == "low"
+
+    def test_the_wider_perplexity_entry_keeps_the_levels_it_declares(self, local_model_cost_map):
+        assert normalize_reasoning_effort_value("xhigh", "perplexity/kimi-k3", "perplexity") == "xhigh"
+        assert normalize_reasoning_effort_value("minimal", "perplexity/kimi-k3", "perplexity") == "minimal"
+
+    @pytest.mark.parametrize(
+        "model, provider, effort, expected",
+        [
+            ("claude-opus-4-7", "anthropic", "max", "max"),
+            ("claude-sonnet-4-6", "anthropic", "minimal", "low"),
+            ("gpt-5-mini", "azure", "max", "high"),
+        ],
+    )
+    def test_an_entry_on_the_per_level_flags_is_untouched(
+        self, local_model_cost_map, model, provider, effort, expected
+    ):
+        """The negative class: every entry without a declaration keeps the exact answer the flag
+        chain gave it before, which is what bounds this change to the entries carrying the key."""
+        assert normalize_reasoning_effort_value(effort, model, provider) == expected
