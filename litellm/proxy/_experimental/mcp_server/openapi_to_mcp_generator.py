@@ -47,12 +47,14 @@ def sanitize_openapi_tool_name(raw_name: str) -> str:
 from litellm._logging import verbose_logger
 from litellm.litellm_core_utils.url_utils import async_safe_get
 from litellm.llms.custom_httpx.http_handler import (
+    AsyncHTTPHandler,
     get_async_httpx_client,
     httpxSpecialProvider,
 )
 from litellm.proxy._experimental.mcp_server.tool_registry import (
     global_mcp_tool_registry,
 )
+from litellm.types.mcp import credential_redirect_hook, custom_credential_slot
 
 
 class _OpenAPIJSONSchema(TypedDict, total=False):
@@ -349,6 +351,19 @@ def build_input_schema(operation: _OpenAPIOperation) -> dict[str, object]:
     }
 
 
+def _upstream_client(url: str) -> AsyncHTTPHandler:
+    """The HTTP client for one upstream call, guarded when a credential rides a custom slot.
+
+    A resolved credential outside ``Authorization`` is not stripped across origins by the client
+    itself, so this arm installs the same hook the MCP client uses. The shared client is cached on
+    stringified params, so a per-server hook takes its own handler rather than polluting that cache.
+    """
+    guard: Final = credential_redirect_hook(url, custom_credential_slot(_request_resolved_auth_headers.get()))
+    if guard is None:
+        return get_async_httpx_client(llm_provider=httpxSpecialProvider.MCP)
+    return AsyncHTTPHandler(event_hooks={"request": [guard]})
+
+
 def _merge_openapi_tool_request_headers(
     static_headers: dict[str, str],
 ) -> dict[str, str]:
@@ -510,7 +525,7 @@ def create_tool_function(
                 except (json.JSONDecodeError, TypeError):
                     json_body = {"data": body_value}
 
-        client: Final = get_async_httpx_client(llm_provider=httpxSpecialProvider.MCP)
+        client: Final = _upstream_client(url)
         upstream: Final = server_label or f"{original_method.upper()} {path}"
 
         try:
