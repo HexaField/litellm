@@ -3017,6 +3017,47 @@ def test_convert_to_anthropic_tool_result_openai_file_pdf_becomes_document():
     assert tool_result["content"][0]["document"]["source"]["bytes"] == pdf_b64
 
 
+def test_bedrock_tool_result_reference_only_content_falls_back_to_empty_text():
+    """
+    Anthropic emits tool messages whose content lists contain only tool_reference
+    parts (e.g. ToolSearch handoff turns). Bedrock Converse has no representation
+    for tool_reference, so the parsed content list would be empty; the toolResult
+    must still contain at least one block or Bedrock 400s. Verify we fall back to
+    a single empty text block, matching the OpenAI/Azure empty-text fallback.
+    """
+    message: ChatCompletionToolMessage = {
+        "tool_call_id": "toolu_ref_only_1",
+        "role": "tool",
+        "content": [{"type": "tool_reference", "tool_name": "WebFetch"}],
+    }
+
+    result = _convert_to_bedrock_tool_call_result(message)
+
+    tool_result = result["toolResult"]
+    assert tool_result["toolUseId"] == "toolu_ref_only_1"
+    assert tool_result["content"] == [{"text": ""}]
+
+
+def test_bedrock_tool_result_mixed_tool_reference_and_text_keeps_text():
+    """
+    A tool_reference part alongside real text content should be dropped without
+    losing the text, so Bedrock still receives the actual tool output.
+    """
+    message: ChatCompletionToolMessage = {
+        "tool_call_id": "toolu_mixed_1",
+        "role": "tool",
+        "content": [
+            {"type": "tool_reference", "tool_name": "WebFetch"},
+            {"type": "text", "text": "fetched page body"},
+        ],
+    }
+
+    result = _convert_to_bedrock_tool_call_result(message)
+
+    tool_result = result["toolResult"]
+    assert tool_result["content"] == [{"text": "fetched page body"}]
+
+
 def test_bedrock_converse_messages_pt_document_various_formats():
     """Test that various document media types produce the correct format value."""
     test_cases = [

@@ -3793,7 +3793,13 @@ def _build_bedrock_tool_result_content_blocks(
     if isinstance(message_content, str):
         return [BedrockToolResultContentBlock(text=message_content)], False
     if isinstance(message_content, list):
-        return _parse_bedrock_tool_result_content_list(message_content), False
+        parsed: Final = _parse_bedrock_tool_result_content_list(message_content)
+        if not parsed:
+            # Bedrock rejects toolResult blocks with empty content, so when every
+            # input part is a non-mappable type (e.g. Anthropic tool_reference),
+            # emit a single empty text block to keep the tool_call answered.
+            return [BedrockToolResultContentBlock(text="")], False
+        return parsed, False
     return [], False
 
 
